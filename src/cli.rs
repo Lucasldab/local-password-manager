@@ -61,6 +61,28 @@ pub enum Commands {
         password_only: bool,
     },
 
+    /// Edit an existing credential's password
+    Edit {
+        /// Service name to edit
+        #[arg(short, long)]
+        service: String,
+
+        /// Optional database path (default: $DATABASE_URL or ./vault.db3)
+        #[arg(short = 'd', long = "db")]
+        db: Option<String>,
+    },
+
+    /// Delete a credential
+    Delete {
+        /// Service name to delete
+        #[arg(short, long)]
+        service: String,
+
+        /// Optional database path (default: $DATABASE_URL or ./vault.db3)
+        #[arg(short = 'd', long = "db")]
+        db: Option<String>,
+    },
+
     /// List all stored services
     List {
         /// Optional database path (default: $DATABASE_URL or ./vault.db3)
@@ -84,6 +106,9 @@ pub fn parse_args() -> Result<()> {
             if passphrase != confirm {
                 bail!("Passphrases do not match");
             }
+
+            // Ensure parent directory exists for the DB path
+            ensure_parent_dir_exists(&db_path)?;
 
             let conn = db::connect(&db_path, &passphrase)?;
 
@@ -143,6 +168,43 @@ pub fn parse_args() -> Result<()> {
                     println!("Username: {}", cred.username);
                     println!("Password: {}", password_str);
                 }
+            } else {
+                println!("No credential found for service '{}'.", service);
+            }
+        }
+        Commands::Edit { service, db } => {
+            let db_path = resolve_db_path(db.clone());
+            log::info!("Using database: {}", db_path);
+            let passphrase = obtain_master_passphrase(&db_path)?;
+            let conn = db::connect(&db_path, &passphrase)?;
+
+            let meta = db::get_metadata(&conn)?;
+            let key = crypto::derive_key(
+                &passphrase,
+                &meta.salt,
+                meta.kdf_iterations,
+                meta.kdf_memory,
+                meta.kdf_parallelism,
+            )?;
+
+            if let Some(cred) = db::get_credential(&conn, service)? {
+                println!("Current username: {}", cred.username);
+                let new_pwd = prompt_password("New password: ")?;
+                let (ciphertext, nonce) = crypto::encrypt_password(&key, new_pwd.as_bytes())?;
+                db::update_credential(&conn, service, &ciphertext, &nonce)?;
+                println!("Credential updated.");
+            } else {
+                println!("No credential found for service '{}'.", service);
+            }
+        }
+        Commands::Delete { service, db } => {
+            let db_path = resolve_db_path(db.clone());
+            log::info!("Using database: {}", db_path);
+            let passphrase = obtain_master_passphrase(&db_path)?;
+            let conn = db::connect(&db_path, &passphrase)?;
+
+            if db::delete_credential(&conn, service)? {
+                println!("Credential for '{}' deleted.", service);
             } else {
                 println!("No credential found for service '{}'.", service);
             }
@@ -234,6 +296,22 @@ fn write_cached_passphrase(path: &Path, pass: &str) -> Result<()> {
         fs::set_permissions(path, perms)?;
     }
     f.write_all(pass.as_bytes())?;
+    Ok(())
+}
+
+fn ensure_parent_dir_exists(db_path: &str) -> Result<()> {
+    let path = Path::new(db_path);
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            fs::create_dir_all(parent)?;
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(parent)?.permissions();
+                perms.set_mode(0o700);
+                fs::set_permissions(parent, perms)?;
+            }
+        }
+    }
     Ok(())
 }
 

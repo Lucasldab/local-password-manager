@@ -143,6 +143,36 @@ pub fn get_credential(conn: &Connection, service: &str) -> Result<Option<Credent
     }
 }
 
+pub fn update_credential(
+    conn: &Connection,
+    service: &str,
+    encrypted_password: &[u8],
+    nonce: &[u8],
+) -> Result<()> {
+    let rows_affected = conn.execute(
+        "UPDATE credentials SET password = ?1, nonce = ?2, updated_at = CURRENT_TIMESTAMP
+         WHERE service = ?3",
+        params![encrypted_password, nonce, service],
+    )
+    .context("Failed to update credential")?;
+
+    if rows_affected == 0 {
+        return Err(anyhow::anyhow!("No credential found for service '{}'", service));
+    }
+
+    Ok(())
+}
+
+pub fn delete_credential(conn: &Connection, service: &str) -> Result<bool> {
+    let rows_affected = conn.execute(
+        "DELETE FROM credentials WHERE service = ?1",
+        params![service],
+    )
+    .context("Failed to delete credential")?;
+
+    Ok(rows_affected > 0)
+}
+
 pub fn list_services(conn: &Connection) -> Result<Vec<String>> {
     let mut stmt = conn.prepare("SELECT DISTINCT service FROM credentials")?;
     let services_iter = stmt.query_map([], |row| row.get(0))?;
