@@ -4,3 +4,32 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+# Command-line argument parsing
+clap = { version = "4.5", features = ["derive"] }
+
+# Environment variable loading from `.env`
+dotenvy = "0.15"
+
+# SQLite with SQLCipher encryption support
+rusqlite = { version = "0.31.0", features = ["sqlcipher"] }
+# Bundle SQLCipher with the binary to avoid system dependency mismatches
+libsqlite3-sys = { version = "0.28", features = ["bundled-sqlcipher"] }
+
+# Argon2id for key derivation
+argon2 = "0.5"
+
+# AEAD encryption (XChaCha20-Poly1305)
+chacha20poly1305 = { version = "0.10", features = ["alloc"] }
+
+# Random number generation
+rand = "0.8"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+anyhow = "1.0"
+
+# Secure password prompts (no-echo)
+rpassword = "7"
